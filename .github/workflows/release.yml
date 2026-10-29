@@ -1,0 +1,42 @@
+name: Release
+
+# Push a tag like v1.0.0 to build the APK and publish it as a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
+
+      - name: Lay out ~/tools
+        run: |
+          mkdir -p "$HOME/tools"
+          ln -sfn "$JAVA_HOME" "$HOME/tools/jdk17"
+          ln -sfn "$ANDROID_HOME" "$HOME/tools/sdk"
+          bash scripts/fetch-deps.sh
+
+      - name: Build
+        run: bash build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv dashboard.apk "pocketdash-${GITHUB_REF_NAME}.apk"
+          gh release create "$GITHUB_REF_NAME" "pocketdash-${GITHUB_REF_NAME}.apk" \
+            --title "$GITHUB_REF_NAME" --generate-notes
