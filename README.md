@@ -28,7 +28,7 @@ Needs JDK 17 and the Android SDK (build-tools 34.0.0, platform android-34) in `~
 adb install -r dashboard.apk
 ```
 
-`assets/engine/prefix.tar.gz` (the ~200 MB Termux toolset used by the engine) is not in the repo. It is only needed on a phone that has never had the toolset; without it the build still works, but the engine cannot be bootstrapped from the APK.
+`assets/engine/prefix.tar.gz` (the stock Termux toolset used by the engine, ~200 MB unpacked) is not in the repo. CI downloads it from the `toolset-1` release; for a local build, fetch it with `gh release download toolset-1 --pattern prefix.tar.gz --dir assets/engine` (it is git-ignored).
 
 ## Layout
 

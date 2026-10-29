@@ -49,6 +49,12 @@ jobs:
           ln -sfn "$ANDROID_HOME" "$HOME/tools/sdk"
           bash scripts/fetch-deps.sh
 
+      - name: Fetch Termux toolset
+        if: steps.ver.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download toolset-1 --pattern prefix.tar.gz --dir assets/engine
+
       - name: Build
         if: steps.ver.outputs.exists != 'true'
         run: bash build.sh
