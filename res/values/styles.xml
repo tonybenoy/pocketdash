@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Whole app: dark, no action bar. Dialogs everywhere pick up the glass look through alertDialogTheme. -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:colorAccent">#FF46E3B7</item>
+        <item name="android:alertDialogTheme">@style/GlassDialog</item>
+    </style>
+
+    <style name="GlassDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/glass_dialog</item>
+        <item name="android:windowElevation">0dp</item>
+        <item name="android:colorAccent">#FF46E3B7</item>
+        <item name="android:textColorPrimary">#FFF2F5FA</item>
+        <item name="android:textColorSecondary">#FF98A2B5</item>
+        <item name="android:textColorHint">#FF6B7486</item>
+        <item name="android:backgroundDimAmount">0.55</item>
+    </style>
+</resources>
