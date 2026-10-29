@@ -1,0 +1,39 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
+
+      # build.sh expects the toolchain under ~/tools
+      - name: Lay out ~/tools
+        run: |
+          mkdir -p "$HOME/tools"
+          ln -sfn "$JAVA_HOME" "$HOME/tools/jdk17"
+          ln -sfn "$ANDROID_HOME" "$HOME/tools/sdk"
+          ./scripts/fetch-deps.sh
+
+      - name: Build
+        run: ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketdash-apk
+          path: dashboard.apk
+          if-no-files-found: error
