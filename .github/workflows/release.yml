@@ -1,9 +1,12 @@
 name: Release
 
-# Push a tag like v1.0.0 to build the APK and publish it as a GitHub Release.
+# Bump android:versionName in AndroidManifest.xml (and versionCode) and push to main:
+# if no release v<versionName> exists yet, the APK is built and published as that release.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: [AndroidManifest.xml]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,16 +17,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml)
+          [ -n "$v" ] || { echo "versionName not found"; exit 1; }
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Release v$v already exists, nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-java@v5
+        if: steps.ver.outputs.exists != 'true'
         with:
           distribution: temurin
           java-version: 17
 
       - uses: android-actions/setup-android@v3
+        if: steps.ver.outputs.exists != 'true'
         with:
           packages: "platform-tools platforms;android-34 build-tools;34.0.0"
 
       - name: Lay out ~/tools
+        if: steps.ver.outputs.exists != 'true'
         run: |
           mkdir -p "$HOME/tools"
           ln -sfn "$JAVA_HOME" "$HOME/tools/jdk17"
@@ -31,12 +50,15 @@ jobs:
           bash scripts/fetch-deps.sh
 
       - name: Build
+        if: steps.ver.outputs.exists != 'true'
         run: bash build.sh
 
       - name: Publish release
+        if: steps.ver.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv dashboard.apk "pocketdash-${GITHUB_REF_NAME}.apk"
-          gh release create "$GITHUB_REF_NAME" "pocketdash-${GITHUB_REF_NAME}.apk" \
-            --title "$GITHUB_REF_NAME" --generate-notes
+          TAG=${{ steps.ver.outputs.tag }}
+          mv dashboard.apk "pocketdash-$TAG.apk"
+          gh release create "$TAG" "pocketdash-$TAG.apk" \
+            --target "$GITHUB_SHA" --title "$TAG" --generate-notes
