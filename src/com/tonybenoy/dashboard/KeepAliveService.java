@@ -148,6 +148,8 @@ public class KeepAliveService extends Service {
     private final BroadcastReceiver screenOn = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent i) {
+            // first run: leave the setup wizard on screen instead of covering it with the dashboard
+            if (!getSharedPreferences("dashboard", MODE_PRIVATE).getBoolean("wizard_done", false)) return;
             new Thread(() -> {
                 try {
                     new ProcessBuilder("su", "-c",

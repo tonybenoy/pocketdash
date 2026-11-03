@@ -30,7 +30,9 @@ public class BootReceiver extends BroadcastReceiver {
                         engine = Engine.MODULE;
                     }
                 }
-                Root.su(script(action, engine), 25);
+                // until the setup wizard has been completed, do not open the dashboard over it
+                boolean wizardDone = ctx.getSharedPreferences("dashboard", Context.MODE_PRIVATE).getBoolean("wizard_done", false);
+                Root.su(script(action, engine, wizardDone), 25);
             } catch (Exception ignored) {
             } finally {
                 pr.finish();
@@ -38,7 +40,7 @@ public class BootReceiver extends BroadcastReceiver {
         }, "boot-receiver").start();
     }
 
-    static String script(String action, String engine) {
+    static String script(String action, String engine, boolean openUi) {
         if (Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)) {
             return "[ -f " + DIR + "/engine_takeover ] || exit 0\n"
                 + "mkdir /dev/.dash_engine 2>/dev/null || exit 0\n"                    // once per boot (tmpfs, cleared on reboot)
@@ -51,7 +53,7 @@ public class BootReceiver extends BroadcastReceiver {
             return "[ -f " + DIR + "/autostart ] || exit 0\n"
                 + "settings put global stay_on_while_plugged_in 7\n"
                 + "dumpsys deviceidle whitelist +com.tonybenoy.dashboard >/dev/null 2>&1\n"
-                + "am start -n com.tonybenoy.dashboard/.MainActivity >/dev/null 2>&1\n";
+                + (openUi ? "am start -n com.tonybenoy.dashboard/.MainActivity >/dev/null 2>&1\n" : "");
         }
         return "exit 0\n";
     }

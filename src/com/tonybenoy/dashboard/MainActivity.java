@@ -129,13 +129,16 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
     private TextView dDot, dState, dSsid, dBand, dGateway, seg24, seg5, dSwitchNote;
     private TextView dClientsTitle, dSpeedDown, dSpeedUp, dWxBig, dWxDesc, dWxHL;
     private TextView dUpstream, dBattery, dUpdated;
-    private TextView cBt, dBtStatus, dBtNow, dBtSetup, dBtBoot;
+    private TextView cBt, dBtStatus, dBtNow, dBtSetup, dBtBoot, dBtAuto, dClock24, dBtPair;
 
     // bluetooth speaker
     private volatile Map<String, String> bt;
     private volatile boolean btBusy;
     private volatile String btMsg = "";
     private long lastHeal;
+    private long lastConnectTry;
+    private volatile boolean btConnecting;
+    private volatile long pairUntil;       // wall-clock end of pairing mode, 0 = off
 
     // services card + draggable board
     private volatile Map<String, String> svc;
@@ -173,6 +176,10 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         build();
         startForegroundService(new Intent(this, KeepAliveService.class));
+        if (!prefs.getBoolean("wizard_done", false)) {
+            startActivity(new Intent(this, WizardActivity.class));     // first run: the wizard asks for permissions itself
+            return;
+        }
         if (presenceOn && !prefs.getBoolean("asked_cam", false)
                 && checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             prefs.edit().putBoolean("asked_cam", true).apply();
@@ -269,6 +276,50 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
 
     private TextView tv(float sp, int color) {
         return tv(sp, color, Typeface.DEFAULT);
+    }
+
+    /** Weather gives "15:00"; show "3 PM" unless the 24-hour clock is on. */
+    private String hourLabel(String hhmm) {
+        if (prefs.getBoolean("clock24", false)) return hhmm;
+        try {
+            int h = Integer.parseInt(hhmm.substring(0, 2));
+            return (h % 12 == 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
+        } catch (Exception e) { return hhmm; }
+    }
+
+    /** The ON/OFF pill at the right of a toggle row. */
+    private TextView pill() {
+        TextView t = tv(13, TEXT, Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.CENTER);
+        return t;
+    }
+
+    private void setPill(TextView t, boolean on) {
+        t.setText(on ? "ON" : "OFF");
+        t.setTextColor(on ? Color.BLACK : DIM);
+        t.setBackground(on ? Glass.accent(this, GREEN, 18) : Glass.raised(this, 18));
+    }
+
+    /** Label + hint on the left, a pill on the right; the whole row is the tap target. */
+    private LinearLayout toggleRow(String label, String hint, TextView pill, View.OnClickListener click) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), 0, 0);
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        TextView l = tv(15, TEXT);
+        l.setText(label);
+        TextView h = tv(12, DIM);
+        h.setText(hint);
+        h.setPadding(0, dp(2), 0, 0);
+        text.addView(l);
+        text.addView(h);
+        row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(pill, new LinearLayout.LayoutParams(dp(68), dp(38)));
+        row.setOnClickListener(click);
+        pill.setOnClickListener(click);
+        return row;
     }
 
     private LinearLayout card() {
@@ -471,13 +522,22 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
         dBtSetup.setOnClickListener(v -> onSpeakerButton());
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
         bp.topMargin = dp(10);
-        dBtBoot = tv(13, DIM);
-        dBtBoot.setPadding(0, dp(10), 0, 0);
-        dBtBoot.setOnClickListener(v -> toggleBoot());
         btc.addView(dBtStatus);
         btc.addView(dBtNow);
         btc.addView(dBtSetup, bp);
-        btc.addView(dBtBoot);
+        dBtPair = tv(15, TEXT, Typeface.DEFAULT_BOLD);
+        dBtPair.setGravity(Gravity.CENTER);
+        dBtPair.setOnClickListener(v -> startPairing());
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+        pp.topMargin = dp(10);
+        btc.addView(dBtPair, pp);
+        dBtAuto = pill();
+        dBtBoot = pill();
+        btc.addView(toggleRow("Auto-connect", "Reconnects to your paired phone by itself", dBtAuto, v -> {
+            prefs.edit().putBoolean("autoconnect", !prefs.getBoolean("autoconnect", true)).apply();
+            renderBt();
+        }));
+        btc.addView(toggleRow("Start at boot", "Opens the dashboard after a restart", dBtBoot, v -> toggleBoot()));
 
         // --- throughput
         LinearLayout th = card();
@@ -535,6 +595,23 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
         dv.addView(dBattery);
         dv.addView(dDim);
         dv.addView(dUpdated);
+        TextView wiz = tv(14, TEXT, Typeface.DEFAULT_BOLD);
+        wiz.setGravity(Gravity.CENTER);
+        wiz.setText("Run setup wizard");
+        wiz.setBackground(Glass.raised(this, 18));
+        wiz.setOnClickListener(v -> startActivity(new Intent(this, WizardActivity.class).putExtra("manual", true)));
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
+        wl.topMargin = dp(12);
+        dv.addView(wiz, wl);
+        dClock24 = pill();
+        setPill(dClock24, prefs.getBoolean("clock24", false));
+        dv.addView(toggleRow("24-hour clock", "Off shows 12-hour with AM / PM", dClock24, v -> {
+            boolean on = !prefs.getBoolean("clock24", false);
+            prefs.edit().putBoolean("clock24", on).apply();
+            setPill(dClock24, on);
+            flip.set24Hour(on);
+            if (weather != null) renderWeather();
+        }));
 
         // --- services (status + restart for the engine's services)
         LinearLayout svcc = card();
@@ -663,6 +740,7 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
         @Override
         public void run() {
             Calendar c = Calendar.getInstance();
+            flip.set24Hour(prefs.getBoolean("clock24", false));
             flip.setTime(c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), c.get(Calendar.SECOND));
             tDate.setText(fmtDate.format(new Date()));
             aurora.setTime(System.currentTimeMillis());
@@ -725,7 +803,32 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
             lastHeal = System.currentTimeMillis();
             applySpeaker(false);
         }
+        autoConnect(up);
         ui.post(this::renderBt);
+    }
+
+    /**
+     * Phones normally reconnect to a paired speaker by themselves, but not always (and never after Bluetooth was
+     * restarted by the setup). While the speaker mode is up and nothing is connected, ask the stack to connect to a
+     * paired audio source, at most once a minute.
+     */
+    private void autoConnect(boolean up) {
+        Map<String, String> m = bt;
+        if (!up || m == null || "1".equals(m.get("connected")) || btBusy || btConnecting
+                || !prefs.getBoolean("autoconnect", true)) return;
+        long now = System.currentTimeMillis();
+        if (now - lastConnectTry < 60 * 1000L) return;
+        lastConnectTry = now;
+        btConnecting = true;
+        new Thread(() -> {
+            try {
+                String r = su("CLASSPATH=" + getPackageCodePath() + " app_process /system/bin com.tonybenoy.dashboard.SystemTool btconnect 2>&1", 25);
+                android.util.Log.i("dash-btconnect", r.trim());
+            } catch (Exception e) {
+                android.util.Log.w("dash-btconnect", "failed: " + e);
+            }
+            btConnecting = false;
+        }, "bt-autoconnect").start();
     }
 
     @Override
@@ -1051,7 +1154,7 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
         for (int i = 0; i < dHours.length; i++) {
             if (i < w.hours.size()) {
                 Weather.Hour h = w.hours.get(i);
-                dHours[i].setText(h.label + "\n" + Weather.emoji(h.code, h.day) + "\n" + Math.round(h.temp) + "°");
+                dHours[i].setText(hourLabel(h.label) + "\n" + Weather.emoji(h.code, h.day) + "\n" + Math.round(h.temp) + "°");
             } else {
                 dHours[i].setText("");
             }
@@ -1512,8 +1615,41 @@ public class MainActivity extends Activity implements RootLink.Listener, SensorE
         dBtSetup.setText(on ? "Turn speaker mode off" : "Set up Bluetooth speaker");
         dBtSetup.setTextColor(on ? TEXT : Color.BLACK);
         dBtSetup.setBackground(on ? Glass.raised(this, 18) : Glass.accent(this, GREEN, 18));
-        dBtBoot.setText("1".equals(m.get("boot"))
-            ? "Start at boot: on  (tap to turn off)" : "Start at boot: off  (tap to turn on)");
+        boolean pairing = System.currentTimeMillis() < pairUntil;
+        dBtPair.setVisibility(on && !btBusy ? View.VISIBLE : View.GONE);
+        dBtPair.setText(pairing ? "Pairing\u2026 " + Math.max(0, (pairUntil - System.currentTimeMillis()) / 1000)
+            + " s left \u2014 pick \u201C" + (m.get("name") == null ? "this phone" : m.get("name")) + "\u201D on the other phone"
+            : "Pair a new phone (2 min)");
+        dBtPair.setTextColor(pairing ? Color.BLACK : TEXT);
+        dBtPair.setBackground(pairing ? Glass.accent(this, GREEN, 18) : Glass.raised(this, 18));
+        setPill(dBtAuto, prefs.getBoolean("autoconnect", true));
+        setPill(dBtBoot, "1".equals(m.get("boot")));
+    }
+
+    /** Discoverable for 2 minutes and every pairing request is confirmed here, so nothing to unlock or type. */
+    private void startPairing() {
+        if (lockedOut() || btBusy || System.currentTimeMillis() < pairUntil) return;
+        pairUntil = System.currentTimeMillis() + 120 * 1000L;
+        renderBt();
+        final Runnable countdown = new Runnable() {
+            @Override public void run() {
+                if (System.currentTimeMillis() < pairUntil) { renderBt(); ui.postDelayed(this, 1000); }
+                else { pairUntil = 0; renderBt(); }
+            }
+        };
+        ui.postDelayed(countdown, 1000);
+        new Thread(() -> {
+            String r = "";
+            try {
+                r = su("CLASSPATH=" + getPackageCodePath() + " app_process /system/bin com.tonybenoy.dashboard.SystemTool btpair 120 2>&1", 140);
+                android.util.Log.i("dash-btpair", r.trim());
+            } catch (Exception e) {
+                android.util.Log.w("dash-btpair", "failed: " + e);
+            }
+            pairUntil = 0;
+            if (r.contains("paired ")) lastConnectTry = 0;   // connect to the new phone right away
+            ui.post(this::renderBt);
+        }, "bt-pair").start();
     }
 
     private void onSpeakerButton() {

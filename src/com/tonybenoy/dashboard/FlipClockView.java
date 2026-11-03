@@ -49,8 +49,20 @@ public class FlipClockView extends View {
         secPaint.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
     }
 
+    private boolean h24;
+    private int rawH, rawM;
+
+    /** 24-hour (13:05) or 12-hour (1:05 with AM/PM, no leading zero). */
+    public void set24Hour(boolean on) {
+        if (h24 == on) return;
+        h24 = on;
+        if (cur[0] >= 0) setTime(rawH, rawM, sec);
+    }
+
     public void setTime(int h, int m, int s) {
-        int[] d = {h / 10, h % 10, m / 10, m % 10};
+        rawH = h; rawM = m;
+        int dh = h24 ? h : (h % 12 == 0 ? 12 : h % 12);
+        int[] d = {dh / 10, dh % 10, m / 10, m % 10};
         long now = SystemClock.uptimeMillis();
         for (int i = 0; i < 4; i++) {
             if (cur[i] != d[i]) {
@@ -108,6 +120,7 @@ public class FlipClockView extends View {
         for (int i = 0; i < 4; i++) {
             float p = start[i] == 0 ? 1f : Math.min(1f, (now - start[i]) / (float) ANIM_MS);
             if (p < 1f) animating = true;
+            if (i == 0 && !h24 && cur[0] == 0) continue;     // 12-hour: no leading zero
             drawShadow(c, xs[i], ys[i], cw, ch);
             drawCard(c, xs[i], ys[i], cw, ch, i, p);
         }
@@ -127,7 +140,8 @@ public class FlipClockView extends View {
         c.drawRoundRect(new RectF(bx, by, bx + fillW, by + barH), barH, barH, paint);
         paint.setShader(null);
         secPaint.setTextSize(15 * dp);
-        c.drawText(String.format("%02d", sec), W / 2f, by + barH + 20 * dp, secPaint);
+        c.drawText(h24 ? String.format("%02d", sec) : String.format("%02d  \u00B7  %s", sec, rawH < 12 ? "AM" : "PM"),
+            W / 2f, by + barH + 20 * dp, secPaint);
 
         if (animating) postInvalidateOnAnimation();
     }

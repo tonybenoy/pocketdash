@@ -41,6 +41,11 @@
             android:exported="false"
             android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|density" />
+        <activity
+            android:name=".WizardActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|density" />
         <receiver
             android:name=".BootReceiver"
             android:exported="true"
